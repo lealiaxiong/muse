@@ -11,8 +11,9 @@ export function extractArxivId(input: string): string | null {
 }
 
 /**
- * Fetch the arXiv HTML version. Falls back to 404 with a clear error
- * if the paper has no HTML version (older papers).
+ * Fetch the arXiv HTML version. A 404 means the paper has no HTML version —
+ * common for very recent submissions (arXiv generates HTML asynchronously)
+ * and for some older papers. PDF fallback is not yet implemented.
  */
 export async function fetchArxivHtml(arxivId: string): Promise<string> {
   const url = `https://arxiv.org/html/${arxivId}`;
@@ -22,7 +23,9 @@ export async function fetchArxivHtml(arxivId: string): Promise<string> {
   });
   if (res.status === 404) {
     throw new Error(
-      `No HTML version available for arXiv:${arxivId}. Try a newer paper.`,
+      `No HTML version available for arXiv:${arxivId}. This paper may be very new ` +
+        `(arXiv generates HTML asynchronously), or too old to have one. ` +
+        `Please try again later, or use a paper that has an HTML version.`,
     );
   }
   if (!res.ok) {

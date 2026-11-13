@@ -69,5 +69,5 @@ Open [http://localhost:3000](http://localhost:3000) and paste an arXiv link, e.g
 ## Known limitations
 
 - **In-memory cache** clears on server restart; repeat links re-fetch after a restart.
-- **Papers without an arXiv HTML version** (some older papers) return a 404 with a "try a newer paper" message. PDF fallback is not implemented.
+- **Papers without an arXiv HTML version** return a 404. This happens with very new submissions (arXiv generates HTML asynchronously) and some older papers. PDF fallback is not implemented.
 - **Tables render inline as HTML**, not as images — that's by design (there's often no image file in the source), but very wide tables scroll inside their card.
