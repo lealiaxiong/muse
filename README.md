@@ -1,4 +1,4 @@
-# Muse
+# Paper Reader
 
 An arXiv reader tuned for human reading: a 650px text column with the paper's figures floating in a side margin, exactly where they're cited — no more hunting through pages to find the chart a paragraph is talking about.
 
