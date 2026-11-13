@@ -33,7 +33,7 @@ Paste (or drag-and-drop) any arXiv link. The paper renders at ideal reading widt
 Meta Muse Ember (`meta/muse-ember`, 1M-token context) is reached through OpenRouter. It is a **reasoning model**: it spends most of its token budget on hidden reasoning before emitting content.
 
 - The original full-paper reformatting prompt truncated mid-JSON ("Unterminated string") and was replaced by deterministic extraction.
-- The LLM paragraph→figure mapping turned out to be *worse* than regex on the test paper (37 vs 43 mappings, missing explicit citations). It's kept behind `USE_LLM_MAPPING=1` for comparison, but off by default.
+- The paragraph→figure map is regex-based (see step 3 above) — we measured LLM mapping against it on the test paper and it was *worse* (37 vs 43 mappings, missing explicit citations), so mapping stays deterministic.
 - Figure explanations use small batches (8 figures/call, `max_tokens: 8000`) so reasoning comfortably fits in budget. Tune these in `src/lib/paper.ts`.
 
 ## Quick start

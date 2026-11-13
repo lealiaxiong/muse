@@ -189,6 +189,27 @@ export function extractPaper(html: string, arxivId: string): ReaderData {
   const rawTitle = $("title").text().trim();
   const title = (rawTitle.replace(/\s*[-–—]\s*arXiv.*$/i, "") || `arXiv:${arxivId}`).trim();
 
+  // --- Authors: .ltx_personname elements in the title block ---
+  const authors: string[] = [];
+  $(".ltx_personname").each((_i: number, el: unknown) => {
+    const name = $(el as never)
+      .text()
+      .replace(/\s+/g, " ")
+      .replace(/[*†]+\s*$/, "") // strip footnote marks (e.g. "Jeff Wu*")
+      .trim();
+    if (name) authors.push(name);
+  });
+  // Fallback: concatenated .ltx_authors block (strip thanks notes)
+  if (authors.length === 0) {
+    const block = $(".ltx_authors")
+      .first()
+      .text()
+      .replace(/\s+/g, " ")
+      .replace(/thanks:.*?(\.\s|$)/gi, "")
+      .trim();
+    if (block) authors.push(block.replace(/^\S+\s*—?\s*/, ""));
+  }
+
   // --- Build bibId -> { url, entry } map from the bibliography ---
   // arXiv HTML renders bibliography entries as plain text — arXiv IDs and
   // DOIs appear as *text* (e.g. "arXiv:2012.05672"), not as <a> links.
@@ -304,7 +325,7 @@ export function extractPaper(html: string, arxivId: string): ReaderData {
     tableHtml: m.tableHtml,
   }));
 
-  return { arxivId, title, paragraphs, figures, paraFigureMap: {} };
+  return { arxivId, title, authors, paragraphs, figures, paraFigureMap: {} };
 }
 
 type OpenRouterResponse = {
@@ -354,128 +375,6 @@ export function buildRegexFigureMap(
     if (found.size > 0) map[p.id] = [...found];
   }
   return map;
-}
-
-/**
- * Ask meta/muse-ember (via OpenRouter) for the paragraph->figure map.
- *
- * The model is a reasoning model: with large prompts it spends almost all
- * of its token budget on hidden reasoning and truncates before emitting any
- * content. So we keep prompts small (short prefixes) and split into batches.
- * Each batch is independent; failures are per-batch, not fatal.
- *
- * NOTE: Kept as an alternative to buildRegexFigureMap — the regex is free
- * and usually more accurate for explicit citations. The LLM catches implicit
- * references and figure ranges. See USE_LLM_MAPPING flag in processPaper().
- */
-export async function buildParaFigureMap(
-  paragraphs: Paragraph[],
-  figures: Figure[],
-): Promise<Record<string, string[]>> {
-  if (paragraphs.length === 0 || figures.length === 0) return {};
-
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    console.warn("OPENROUTER_API_KEY not set; skipping figure mapping");
-    return {};
-  }
-
-  const system = [
-    "You map scientific paragraphs to the figures they reference.",
-    "Return ONLY a compact JSON object (no spaces, no markdown fences).",
-    'Example: {"p3":["f1","f2"],"p7":["f4"]}',
-    "Keys are paragraph ids, values are arrays of figure ids the paragraph cites",
-    'via "Fig. N", "Figure N", or "Table N", or discusses directly.',
-    "Omit paragraphs that cite no figures. Do not add commentary.",
-  ].join("\n");
-
-  // Compact figure list: id + label only (captions are long and add little
-  // to the mapping decision; the "Figure N" text in paragraphs drives it).
-  const fText = figures
-    .map((f) => `${f.id}:${f.label}`)
-    .join(" ");
-
-  const BATCH = 25; // small batches keep reasoning_tokens well under budget
-  const combined: Record<string, string[]> = {};
-
-  const batches: Paragraph[][] = [];
-  for (let i = 0; i < paragraphs.length; i += BATCH) {
-    batches.push(paragraphs.slice(i, i + BATCH));
-  }
-
-  const paraIds = new Set(paragraphs.map((p) => p.id));
-  const figIds = new Set(figures.map((f) => f.id));
-
-  const results = await Promise.allSettled(
-    batches.map(async (batch) => {
-      const pText = batch
-        .map((p) => `${p.id}: ${p.text.slice(0, 500)}`)
-        .join("\n");
-
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "http://localhost:3000",
-          "X-Title": "arxiv-reader",
-        },
-        body: JSON.stringify({
-          model: "meta/muse-ember",
-          messages: [
-            { role: "system", content: system },
-            {
-              role: "user",
-              content: `Figures: ${fText}\n\nParagraphs:\n${pText}`,
-            },
-          ],
-          temperature: 0.1,
-          // Batch is small (25 paras × 500 chars ≈ 3.5k tokens) — reasoning
-          // comfortably fits in this budget.
-          max_tokens: 6000,
-        }),
-        signal: AbortSignal.timeout(120_000),
-      });
-
-      if (!res.ok) {
-        console.error(`OpenRouter ${res.status} batch (skipped)`);
-        return {} as Record<string, string[]>;
-      }
-
-      const json = (await res.json()) as OpenRouterResponse;
-      const content = json.choices?.[0]?.message?.content ?? "";
-      if (!content) {
-        console.error("OpenRouter empty content (batch skipped)");
-        return {} as Record<string, string[]>;
-      }
-
-      const cleaned = content
-        .replace(/^```(?:json)?\s*/i, "")
-        .replace(/```\s*$/i, "")
-        .trim();
-
-      try {
-        const parsed = JSON.parse(cleaned) as Record<string, string[]>;
-        const map: Record<string, string[]> = {};
-        for (const [paraId, figIds2] of Object.entries(parsed)) {
-          if (!paraIds.has(paraId) || !Array.isArray(figIds2)) continue;
-          const valid = figIds2.filter((id) => figIds.has(id));
-          if (valid.length > 0) map[paraId] = valid;
-        }
-        return map;
-      } catch (err) {
-        console.error("Batch JSON parse failed:", err);
-        return {} as Record<string, string[]>;
-      }
-    }),
-  );
-
-  for (const r of results) {
-    if (r.status === "fulfilled") Object.assign(combined, r.value);
-    else console.error("Batch failed:", r.reason);
-  }
-  console.log(`Figure mapping: ${Object.keys(combined).length} paragraphs mapped`);
-  return combined;
 }
 
 /**
@@ -600,18 +499,13 @@ export async function buildFigureExplanations(
   return combined;
 }
 
-/** Full pipeline: extract paper, map via regex (default) or LLM, attach explanations. */
+/** Full pipeline: extract paper, map via regex, attach explanations. */
 export async function processPaper(arxivId: string, html: string): Promise<ReaderData> {
   const paper = extractPaper(html, arxivId);
 
-  // Regex mapping is the default — free, instant, and more accurate for
-  // explicit citations. Set USE_LLM_MAPPING=1 to use the LLM instead.
-  const useLlm = process.env.USE_LLM_MAPPING === "1";
-  if (useLlm) {
-    paper.paraFigureMap = await buildParaFigureMap(paper.paragraphs, paper.figures);
-  } else {
-    paper.paraFigureMap = buildRegexFigureMap(paper.paragraphs, paper.figures);
-  }
+  // Regex mapping — free, instant, deterministic, and more accurate than
+  // the LLM for explicit citations on the one paper we measured (43 vs 37).
+  paper.paraFigureMap = buildRegexFigureMap(paper.paragraphs, paper.figures);
 
   // Figure explanations (Muse Ember) — failure-safe, doesn't block the reader.
   const explanations = await buildFigureExplanations(

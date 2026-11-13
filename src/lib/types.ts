@@ -29,6 +29,7 @@ export interface Paragraph {
 export interface ReaderData {
   arxivId: string;
   title: string;
+  authors: string[];
   paragraphs: Paragraph[];
   figures: Figure[];
   /** paraId -> [figureId, ...] */

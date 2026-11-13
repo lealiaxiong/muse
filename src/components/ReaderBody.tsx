@@ -137,8 +137,23 @@ export default function ReaderBody({ data, activeParaId, onActiveParaChange }: P
       className="w-full max-w-[650px] shrink-0 px-4 py-6"
       aria-label="Paper"
     >
-      <h1 className="mb-6 text-2xl font-semibold leading-snug">{data.title}</h1>
-      <p className="mb-8 text-xs text-zinc-500">arXiv:{data.arxivId}</p>
+      <h1 className="mb-3 text-2xl font-semibold leading-snug">{data.title}</h1>
+      {data.authors.length > 0 && (
+        <p className="mb-3 text-sm leading-6 text-zinc-700">
+          {data.authors.join(", ")}
+        </p>
+      )}
+      <p className="mb-8 text-xs text-zinc-500">
+        <a
+          href={`https://arxiv.org/abs/${data.arxivId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-violet-700 underline underline-offset-2 hover:text-violet-900"
+          title="View on arXiv"
+        >
+          arXiv:{data.arxivId}
+        </a>
+      </p>
 
       {data.paragraphs.map((p) => {
         const isActive = p.id === activeParaId;
