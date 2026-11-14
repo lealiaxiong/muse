@@ -390,6 +390,13 @@ export async function buildFigureExplanations(
 ): Promise<Record<string, string>> {
   if (figures.length === 0) return {};
 
+  // Feature flag: set ENABLE_EXPLANATIONS=false to deploy without LLM captions
+  // (no OpenRouter calls — the app then runs entirely on deterministic code).
+  if (process.env.ENABLE_EXPLANATIONS === "false") {
+    console.log("Explanations disabled (ENABLE_EXPLANATIONS=false)");
+    return {};
+  }
+
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     console.warn("OPENROUTER_API_KEY not set; skipping explanations");
