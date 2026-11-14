@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCached, setCached } from "@/lib/cache";
 import { extractArxivId, fetchArxivHtml, processPaper } from "@/lib/paper";
 
+// Allow up to 60s for OpenRouter explanation batches (Vercel Hobby caps at
+// 10s by default; this export extends it — see vercel.json maxDuration).
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   let body: { url?: string };
   try {
